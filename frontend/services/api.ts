@@ -1,5 +1,100 @@
 // Mock API calls - replace these with your actual API endpoints
+var apiurl = "http://172.16.60.83:5000/";
+
 export const fetchBottles = async (): Promise<Bottle[]> => {
+  try {
+    const response = await fetch(apiurl+'getBottles', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data: Bottle[] = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching bottles:', error);
+    throw error; // Re-throw to allow handling by the caller
+  }
+};
+
+export const fetchBottlesMounted = async (): Promise<BottleMounted[]> => {
+  try {
+    const response = await fetch(apiurl+'getBottlesMounted', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data: BottleMounted[] = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching bottles:', error);
+    throw error; // Re-throw to allow handling by the caller
+  }
+};
+
+export const updateBottleAssignment = async (bottleId:number,handlerId:number): Promise<number> => {
+  try {
+    const response = await fetch(apiurl+'setBottlesMounted', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body:'{"bottleId":'+bottleId+',"handlerId":'+handlerId+'}'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data: any = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching bottles:', error);
+    throw error; // Re-throw to allow handling by the caller
+  }
+};
+  
+  export const fetchCocktails = async (): Promise<Cocktail[]> => {
+    // Simulated API call
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve([
+          {
+            id: '1',
+            name: 'Margarita',
+            instructions: 'Mix tequila, triple sec, and lime juice',
+            ingredients: [
+              { bottleId: '4', amount: 60 },
+              { bottleId: '5', amount: 30 }
+            ],
+            image: 'https://api.a0.dev/assets/image?text=beautiful+margarita+cocktail+photography+on+black+background'
+          },
+          {
+            id: '2',
+            name: 'Vodka Martini',
+            instructions: 'Mix vodka with dry vermouth',
+            ingredients: [
+              { bottleId: '1', amount: 60 }
+            ],
+            image: 'https://api.a0.dev/assets/image?text=elegant+vodka+martini+cocktail+photography+on+black+background'
+          }
+        ]);
+      }, 1000);
+    });
+  };
+
+export const fetchBottles1 = async (): Promise<Bottle[]> => {
     // Simulated API call
     return new Promise((resolve) => {
       setTimeout(() => {
@@ -14,7 +109,7 @@ export const fetchBottles = async (): Promise<Bottle[]> => {
     });
   };
   
-  export const fetchCocktails = async (): Promise<Cocktail[]> => {
+  export const fetchCocktails1 = async (): Promise<Cocktail[]> => {
     // Simulated API call
     return new Promise((resolve) => {
       setTimeout(() => {

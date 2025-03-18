@@ -4,6 +4,13 @@ export interface Bottle {
     type: string;
     handlerId: number | null;
   }
+
+  export interface BottleMounted {
+    id: string;
+    bottle_id: string | null;
+    descr: string | null;
+    name: number | null;
+  }
   
   export interface Cocktail {
     id: string;

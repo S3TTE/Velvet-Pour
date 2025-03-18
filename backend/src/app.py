@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Create Flask app
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]}})
 
 # Initialize WebSocket
 socketio = init_websocket(app)
@@ -29,7 +29,7 @@ def get_bottles():
     try:
         
         query = """
-        SELECT * FROM bottle ORDER BY type
+        SELECT * FROM bottle ORDER BY name
         """
         
         # Execute query
@@ -63,20 +63,22 @@ def get_bottles_mounted():
         logger.error(f"Error retrieving data: {e}")
         return jsonify({'error': 'Internal server error'}), 500
     
-@app.route('/postBottlesMounted', methods=['POST'])
+@app.route('/setBottlesMounted', methods=['POST'])
 def set_bottles_mounted():
     """Get data from the database."""
     try:
         # Get query parameters
-        param = request.args.get('param', 'default_value')
+        req = request.json
+        bottle_id = req["bottleId"]
+        handler_id = req["handlerId"]
         
         # Example query - modify based on your data model
         query = """
-        SELECT * FROM bottle
+        UPDATE bottle_mounted_rel SET bottle_id=%s WHERE id=%s
         """
         
         # Execute query
-        results = db.execute_query(query, (param,))
+        results = db.execute_query(query, (bottle_id,handler_id))
         
         return jsonify(results)
     
