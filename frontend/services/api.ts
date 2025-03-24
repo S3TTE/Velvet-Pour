@@ -1,5 +1,5 @@
 // Mock API calls - replace these with your actual API endpoints
-var apiurl = "http://172.16.60.83:5000/";
+var apiurl = "http://172.16.1.116:5000/";
 
 export const fetchBottles = async (): Promise<Bottle[]> => {
   try {
@@ -65,34 +65,30 @@ export const updateBottleAssignment = async (bottleId:number,handlerId:number): 
   }
 };
   
-  export const fetchCocktails = async (): Promise<Cocktail[]> => {
-    // Simulated API call
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve([
-          {
-            id: '1',
-            name: 'Margarita',
-            instructions: 'Mix tequila, triple sec, and lime juice',
-            ingredients: [
-              { bottleId: '4', amount: 60 },
-              { bottleId: '5', amount: 30 }
-            ],
-            image: 'https://api.a0.dev/assets/image?text=beautiful+margarita+cocktail+photography+on+black+background'
-          },
-          {
-            id: '2',
-            name: 'Vodka Martini',
-            instructions: 'Mix vodka with dry vermouth',
-            ingredients: [
-              { bottleId: '1', amount: 60 }
-            ],
-            image: 'https://api.a0.dev/assets/image?text=elegant+vodka+martini+cocktail+photography+on+black+background'
-          }
-        ]);
-      }, 1000);
+export const fetchCocktails = async (): Promise<Cocktail[]> => {
+  try {
+    const response = await fetch(apiurl+'getDrinkAvaiable', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
-  };
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data: any = await response.json();
+    for(let i=0;i<data.length;i++){
+      let name: string = data[i]["name"].replaceAll(" ","+");
+      data[i]["img_path"] = "https://api.a0.dev/assets/image?text=beautiful+"+name+"+cocktail+photography+on+black+background";
+    }
+    return data;
+  } catch (error) {
+    console.error('Error fetching bottles:', error);
+    throw error; // Re-throw to allow handling by the caller
+  }
+};
 
 export const fetchBottles1 = async (): Promise<Bottle[]> => {
     // Simulated API call

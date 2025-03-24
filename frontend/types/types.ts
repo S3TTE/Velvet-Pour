@@ -17,8 +17,9 @@ export interface Bottle {
     name: string;
     instructions: string;
     ingredients: {
-      bottleId: string;
-      amount: number;
+      id: string;
+      name: string;
+      oz: number;
     }[];
-    image: string;
+    img_path: string;
   }

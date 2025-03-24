@@ -34,7 +34,6 @@ def get_bottles():
         
         # Execute query
         results = db.execute_query(query)
-        logger.info("result: %s" % results)
         
         return jsonify(results)
     
@@ -89,6 +88,7 @@ def set_bottles_mounted():
 @app.route('/getDrinkAvaiable', methods=['GET'])
 def get_drink_avaiable():
     """Get data from the database."""
+    drink_list = []
     try:
         
         query = """
@@ -100,8 +100,22 @@ def get_drink_avaiable():
         
         # Execute query
         results = db.execute_query(query)
+
+        for res in results:
+            query = """
+            SELECT b.*,oz 
+            FROM bottle b JOIN drink_rel dr ON b.id=dr.bottle_id 
+            WHERE dr.drink_id = %s        
+            """
+            drink = dict()
+            drink["ingredients"] = db.execute_query(query,(res["id"],))
+            drink["id"] = res["id"]
+            drink["name"] = res["name"]
+            drink["is_favourite"] = res["is_favourite"]
+            drink["img_path"] = res["img_path"]
+            drink_list.append(drink)
         
-        return jsonify(results)
+        return jsonify(drink_list)
     
     except Exception as e:
         logger.error(f"Error retrieving data: {e}")
