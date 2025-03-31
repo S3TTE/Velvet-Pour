@@ -1,6 +1,7 @@
-from app import create_app
+# backend/wsgi.py
+from src.app import app, socketio
 
-application = create_app('production')
+application = app
 
 if __name__ == '__main__':
-    application.run()
+    socketio.run(application)

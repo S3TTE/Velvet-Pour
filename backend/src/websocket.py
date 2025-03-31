@@ -1,15 +1,17 @@
 import json
-import asyncio
+import time
 import logging
 from flask import Flask
 from flask_socketio import SocketIO, emit
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger('engineio').setLevel(logging.DEBUG)
+logging.getLogger('socketio').setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Initialize SocketIO
-socketio = SocketIO()
+socketio = SocketIO(cors_allowed_origins="*")
 
 # Machine status tracker
 machine_status = {
@@ -21,12 +23,9 @@ machine_status = {
 
 def init_websocket(app):
     """Initialize the WebSocket with the Flask app"""
-    socketio.init_app(app, cors_allowed_origins="*", async_mode='eventlet')
+    socketio.init_app(app)
+    logger.info("WebSocket initialized")
     return socketio
-
-def get_machine_status():
-    """Get the current machine status"""
-    return machine_status
 
 @socketio.on('connect')
 def handle_connect():
@@ -43,10 +42,23 @@ def handle_disconnect():
     machine_status['connected_clients'] -= 1
     logger.info(f"Client disconnected. Total clients: {machine_status['connected_clients']}")
 
+@socketio.on('message')
+def handle_message(message):
+    """Handle generic messages from client"""
+    logger.info(f"Received message: {message}")
+    emit('message', {'response': f'Server received: {message}'})
+
+@socketio.on('ping_server')
+def handle_ping(data):
+    """Handle ping from client"""
+    logger.info(f"Ping received: {data}")
+    emit('pong_client', {'time': time.time(), 'received': data})
+
 def notify_operation_started(operation_name):
     """Notify all clients that an operation has started"""
     machine_status['status'] = 'busy'
     machine_status['current_operation'] = operation_name
+    machine_status['start_time'] = time.time()
     
     logger.info(f"Operation started: {operation_name}")
     socketio.emit('operation_started', {
@@ -59,6 +71,7 @@ def notify_operation_completed(operation_name):
     """Notify all clients that an operation has completed"""
     machine_status['status'] = 'available'
     machine_status['current_operation'] = None
+    machine_status['start_time'] = None
     
     logger.info(f"Operation completed: {operation_name}")
     socketio.emit('operation_completed', {
@@ -71,6 +84,7 @@ def notify_operation_failed(operation_name, error_message):
     """Notify all clients that an operation has failed"""
     machine_status['status'] = 'available'
     machine_status['current_operation'] = None
+    machine_status['start_time'] = None
     
     logger.info(f"Operation failed: {operation_name} - {error_message}")
     socketio.emit('operation_failed', {
