@@ -3,6 +3,11 @@ import time
 import logging
 from flask import Flask
 from flask_socketio import SocketIO, emit
+import threading
+import eventlet
+
+# Ensure monkey patching is done
+eventlet.monkey_patch()
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -11,7 +16,7 @@ logging.getLogger('socketio').setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Initialize SocketIO
-socketio = SocketIO(cors_allowed_origins="*")
+socketio = SocketIO(cors_allowed_origins="*", async_mode='eventlet')
 
 # Machine status tracker
 machine_status = {
@@ -61,11 +66,18 @@ def notify_operation_started(operation_name):
     machine_status['start_time'] = time.time()
     
     logger.info(f"Operation started: {operation_name}")
-    socketio.emit('operation_started', {
+    data = {
         'status': 'busy',
         'operation': operation_name,
         'message': f"Machine is busy preparing: {operation_name}"
-    })
+    }
+    
+    try:
+        # Use a direct emit to all clients
+        socketio.emit('operation_started', data, namespace='/')
+        logger.info(f"Operation started notification emitted for: {operation_name}")
+    except Exception as e:
+        logger.error(f"Error emitting operation started: {e}")
 
 def notify_operation_completed(operation_name):
     """Notify all clients that an operation has completed"""
@@ -74,11 +86,22 @@ def notify_operation_completed(operation_name):
     machine_status['start_time'] = None
     
     logger.info(f"Operation completed: {operation_name}")
-    socketio.emit('operation_completed', {
+    data = {
         'status': 'available',
         'operation': operation_name,
         'message': f"Machine has finished preparing: {operation_name}"
-    })
+    }
+    
+    # Use eventlet to schedule the emit in the main thread
+    def emit_completion():
+        try:
+            socketio.emit('operation_completed', data, namespace='/')
+            logger.info(f"Operation completed notification emitted for: {operation_name}")
+        except Exception as e:
+            logger.error(f"Error emitting operation completed: {e}")
+    
+    # Schedule the emit in the main eventlet thread
+    eventlet.spawn(emit_completion)
 
 def notify_operation_failed(operation_name, error_message):
     """Notify all clients that an operation has failed"""
@@ -87,9 +110,20 @@ def notify_operation_failed(operation_name, error_message):
     machine_status['start_time'] = None
     
     logger.info(f"Operation failed: {operation_name} - {error_message}")
-    socketio.emit('operation_failed', {
+    data = {
         'status': 'available',
         'operation': operation_name,
         'error': error_message,
         'message': f"Failed to prepare {operation_name}: {error_message}"
-    })
+    }
+    
+    # Use eventlet to schedule the emit in the main thread
+    def emit_failure():
+        try:
+            socketio.emit('operation_failed', data, namespace='/')
+            logger.info(f"Operation failed notification emitted for: {operation_name}")
+        except Exception as e:
+            logger.error(f"Error emitting operation failed: {e}")
+    
+    # Schedule the emit in the main eventlet thread
+    eventlet.spawn(emit_failure)

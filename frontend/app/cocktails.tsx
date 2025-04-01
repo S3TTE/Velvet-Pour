@@ -11,10 +11,19 @@ import {
   FlatList
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { fetchCocktails, fetchBottles } from '../services/api';
+import { fetchCocktails, fetchBottles, placeCocktailOrder } from '../services/api';
 import type { Cocktail, Bottle } from '../types/types';
 import { toast } from 'sonner-native';
-import { Ionicons } from '@expo/vector-icons'; // Assuming you're using Expo
+import { Ionicons } from '@expo/vector-icons';
+import { useSocketIO } from '../services/websocket';
+
+// Define a type for the machine status
+interface MachineStatus {
+  status: 'available' | 'busy';
+  current_operation: string | null;
+  start_time: string | null;
+  connected_clients: number;
+}
 
 export default function CocktailList() {
   const [cocktails, setCocktails] = useState<Cocktail[]>([]);
@@ -25,10 +34,59 @@ export default function CocktailList() {
   const [orderModalVisible, setOrderModalVisible] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [orderInProgress, setOrderInProgress] = useState(false);
+  
+  // Machine status state
+  const [machineStatus, setMachineStatus] = useState<MachineStatus>({
+    status: 'available',
+    current_operation: null,
+    start_time: null,
+    connected_clients: 0
+  });
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
+  
+  // Initialize the socket connection
+  const { socketService, isConnected } = useSocketIO('http://172.16.1.116:5000');
 
   useEffect(() => {
     loadData();
-  }, []);
+    
+    // Setup socket event listeners
+    if (socketService) {
+      const statusSub = socketService.on('status_update', (data: MachineStatus) => {
+        setMachineStatus(data);
+      });
+      
+      const operationStartedSub = socketService.on('operation_started', (data) => {
+        setMachineStatus(prev => ({
+          ...prev,
+          status: 'busy',
+          current_operation: data.operation,
+          start_time: data.time
+        }));
+      });
+      
+      const operationCompletedSub = socketService.on('operation_completed', (data) => {
+        setMachineStatus(prev => ({
+          ...prev,
+          status: 'available',
+          current_operation: null,
+          start_time: null
+        }));
+        
+        // Show a toast notification when an operation completes
+        if (data.operation) {
+          toast.success(`${data.operation} completed!`);
+        }
+      });
+      
+      // Cleanup subscriptions
+      return () => {
+        statusSub();
+        operationStartedSub();
+        operationCompletedSub();
+      };
+    }
+  }, [socketService]);
 
   const loadData = async () => {
     setLoading(true);
@@ -61,11 +119,8 @@ export default function CocktailList() {
     
     setOrderInProgress(true);
     try {
-      // Here you would call your API to place the order
-      // e.g., await placeOrderApi(selectedCocktail.id, specialInstructions);
-      
-      // Simulate API call with timeout
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Call the API to place the order
+      await placeCocktailOrder(selectedCocktail.id, specialInstructions);
       
       toast.success(`Making ${selectedCocktail.name}!`);
       setOrderModalVisible(false);
@@ -74,6 +129,28 @@ export default function CocktailList() {
     } finally {
       setOrderInProgress(false);
     }
+  };
+
+  // Convert ISO date to a more readable format
+  const formatDate = (isoDate: string | null) => {
+    if (!isoDate) return 'N/A';
+    const date = new Date(isoDate);
+    return date.toLocaleTimeString();
+  };
+
+  // Calculate elapsed time
+  const getElapsedTime = (startTime: string | null) => {
+    if (!startTime) return 'N/A';
+    
+    const start = new Date(startTime).getTime();
+    const now = new Date().getTime();
+    const elapsedMs = now - start;
+    
+    const seconds = Math.floor(elapsedMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    
+    return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
   };
 
   if (loading) {
@@ -91,6 +168,7 @@ export default function CocktailList() {
         style={styles.cocktailCard} 
         onPress={() => openOrderModal(item)}
         activeOpacity={0.7}
+        disabled={machineStatus.status === 'busy'}
       >
         <Image
           source={{ uri: item.img_path }}
@@ -114,10 +192,16 @@ export default function CocktailList() {
           </View>
           
           <TouchableOpacity
-            style={styles.orderButton}
+            style={[
+              styles.orderButton,
+              machineStatus.status === 'busy' && styles.orderButtonDisabled
+            ]}
             onPress={() => openOrderModal(item)}
+            disabled={machineStatus.status === 'busy'}
           >
-            <Text style={styles.orderButtonText}>Order Now</Text>
+            <Text style={styles.orderButtonText}>
+              {machineStatus.status === 'busy' ? 'Machine Busy' : 'Order Now'}
+            </Text>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -126,7 +210,20 @@ export default function CocktailList() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Cocktail Menu</Text>
+      <View style={styles.headerContainer}>
+        <Text style={styles.title}>Cocktail Menu</Text>
+        
+        {/* Status LED indicator */}
+        <TouchableOpacity 
+          style={[
+            styles.statusIndicator, 
+            { backgroundColor: machineStatus.status === 'available' ? '#4CAF50' : '#FF5252' }
+          ]}
+          onPress={() => setStatusModalVisible(true)}
+        >
+          <View style={styles.statusDot}></View>
+        </TouchableOpacity>
+      </View>
       
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
@@ -213,18 +310,109 @@ export default function CocktailList() {
                 />
                 
                 <TouchableOpacity 
-                  style={styles.placeOrderButton}
+                  style={[
+                    styles.placeOrderButton,
+                    (orderInProgress || machineStatus.status === 'busy') && styles.placeOrderButtonDisabled
+                  ]}
                   onPress={placeOrder}
-                  disabled={orderInProgress}
+                  disabled={orderInProgress || machineStatus.status === 'busy'}
                 >
                   {orderInProgress ? (
                     <ActivityIndicator color="#FFF" size="small" />
+                  ) : machineStatus.status === 'busy' ? (
+                    <Text style={styles.placeOrderButtonText}>Machine Busy</Text>
                   ) : (
                     <Text style={styles.placeOrderButtonText}>Order Now</Text>
                   )}
                 </TouchableOpacity>
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Machine Status Modal */}
+      <Modal
+        visible={statusModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setStatusModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.statusModalContent}>
+            <TouchableOpacity 
+              style={styles.closeButton} 
+              onPress={() => setStatusModalVisible(false)}
+            >
+              <Ionicons name="close" size={24} color="#FFF" />
+            </TouchableOpacity>
+            
+            <Text style={styles.statusModalTitle}>Machine Status</Text>
+            
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Status:</Text>
+              <View style={styles.statusValueContainer}>
+                <View style={[
+                  styles.statusDotLarge,
+                  { backgroundColor: machineStatus.status === 'available' ? '#4CAF50' : '#FF5252' }
+                ]} />
+                <Text style={styles.statusValue}>
+                  {machineStatus.status === 'available' ? 'Available' : 'Busy'}
+                </Text>
+              </View>
+            </View>
+            
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Current Operation:</Text>
+              <Text style={styles.statusValue}>
+                {machineStatus.current_operation || 'None'}
+              </Text>
+            </View>
+            
+            {machineStatus.start_time && (
+              <>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>Start Time:</Text>
+                  <Text style={styles.statusValue}>
+                    {formatDate(machineStatus.start_time)}
+                  </Text>
+                </View>
+                
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>Elapsed Time:</Text>
+                  <Text style={styles.statusValue}>
+                    {getElapsedTime(machineStatus.start_time)}
+                  </Text>
+                </View>
+              </>
+            )}
+            
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Connected Clients:</Text>
+              <Text style={styles.statusValue}>
+                {machineStatus.connected_clients}
+              </Text>
+            </View>
+            
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>WebSocket:</Text>
+              <View style={styles.statusValueContainer}>
+                <View style={[
+                  styles.statusDotSmall,
+                  { backgroundColor: isConnected ? '#4CAF50' : '#FF5252' }
+                ]} />
+                <Text style={styles.statusValue}>
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </Text>
+              </View>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.closeStatusButton} 
+              onPress={() => setStatusModalVisible(false)}
+            >
+              <Text style={styles.closeStatusButtonText}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -237,6 +425,38 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
     padding: 15,
+  },
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  statusIndicator: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 5,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  statusDotLarge: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginRight: 8,
+  },
+  statusDotSmall: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
   },
   loadingContainer: {
     flex: 1,
@@ -252,7 +472,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#FFF',
-    marginBottom: 15,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -312,6 +531,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
+  orderButtonDisabled: {
+    backgroundColor: '#666',
+  },
   orderButtonText: {
     color: '#FFF',
     fontSize: 14,
@@ -341,6 +563,13 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 20,
     maxHeight: '80%',
+  },
+  statusModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    padding: 20,
+    margin: 20,
+    marginTop: 80,
   },
   closeButton: {
     alignSelf: 'flex-end',
@@ -391,9 +620,53 @@ const styles = StyleSheet.create({
     height: 55,
     justifyContent: 'center',
   },
+  placeOrderButtonDisabled: {
+    backgroundColor: '#666',
+  },
   placeOrderButtonText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Status modal styles
+  statusModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  statusLabel: {
+    color: '#CCC',
+    fontSize: 16,
+  },
+  statusValue: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  statusValueContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  closeStatusButton: {
+    backgroundColor: '#333',
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  closeStatusButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   }
 });
