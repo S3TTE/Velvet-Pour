@@ -1,5 +1,5 @@
 // Mock API calls - replace these with your actual API endpoints
-var apiurl = "http://172.16.1.116:5000/";
+var apiurl = "http://127.0.0.1:5000/";
 
 export const fetchBottles = async (): Promise<Bottle[]> => {
   try {
